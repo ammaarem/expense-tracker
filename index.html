@@ -600,6 +600,90 @@
   .tab-icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
   .tab-icon-btn.confirm { border-color: var(--accent); color: var(--accent); }
 
+  /* ── SEARCH BAR ── */
+  .search-wrap {
+    padding: 0 16px 12px;
+    position: relative;
+  }
+  .search-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-dim);
+    font-size: 15px;
+    pointer-events: none;
+  }
+  .search-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 11px 36px 11px 36px;
+    outline: none;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-dim); }
+  .search-clear {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    display: none;
+  }
+  .search-clear.visible { display: block; }
+  .search-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+    margin-top: 5px;
+    min-height: 16px;
+  }
+
+  /* ── AUTOCOMPLETE ── */
+  .autocomplete-wrap { position: relative; }
+  .autocomplete-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    z-index: 50;
+    max-height: 180px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-item {
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    transition: background .1s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .autocomplete-item:last-child { border-bottom: none; }
+  .autocomplete-item:hover, .autocomplete-item.active { background: rgba(200,245,66,.08); color: var(--accent); }
+  .autocomplete-item .ac-icon { font-size: 12px; color: var(--text-dim); }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -708,13 +792,21 @@
       <label>Amount</label>
       <input type="number" id="newAmount" placeholder="0.00" step="0.01" inputmode="decimal" />
     </div>
-    <div class="form-field">
+    <div class="form-field autocomplete-wrap">
       <label>Vendor</label>
-      <input type="text" id="newVendor" placeholder="Shop name" />
+      <input type="text" id="newVendor" placeholder="Shop name" autocomplete="off"
+             oninput="acShow('newVendor','acVendor')"
+             onkeydown="acKey(event,'newVendor','acVendor')"
+             onblur="acHide('acVendor')" />
+      <div class="autocomplete-list" id="acVendor"></div>
     </div>
-    <div class="form-field">
-      <label>Item</label>
-      <input type="text" id="newItem" placeholder="What you bought" />
+    <div class="form-field autocomplete-wrap">
+      <label>Item / Description</label>
+      <input type="text" id="newItem" placeholder="What you bought" autocomplete="off"
+             oninput="acShow('newItem','acItem')"
+             onkeydown="acKey(event,'newItem','acItem')"
+             onblur="acHide('acItem')" />
+      <div class="autocomplete-list" id="acItem"></div>
     </div>
   </div>
   <div class="form-submit">
@@ -723,6 +815,17 @@
 </div>
 
 <div class="divider"></div>
+
+<!-- SEARCH BAR -->
+<div class="search-wrap">
+  <div class="search-input-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" class="search-input" id="searchInput" placeholder="Search by vendor, item or amount…"
+           oninput="filterEntries()" autocomplete="off" />
+    <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+  </div>
+  <div class="search-count" id="searchCount"></div>
+</div>
 
 <!-- ENTRY LIST -->
 <div class="table-section">
@@ -1240,6 +1343,84 @@ async function saveEdit(entryId, rowIndex) {
   }
 }
 
+// ── AUTOCOMPLETE ───────────────────────────────────────
+let acActiveIdx = -1;
+
+function getAcSuggestions(field) {
+  const val = document.getElementById(field).value.trim().toLowerCase();
+  if (!val) return [];
+  const key = field === 'newVendor' ? 'vendor' : 'item';
+  const seen = new Set();
+  return entries
+    .map(e => e[key])
+    .filter(v => v && v.toLowerCase().includes(val) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .slice(0, 6);
+}
+
+function acShow(fieldId, listId) {
+  const list = document.getElementById(listId);
+  const suggestions = getAcSuggestions(fieldId);
+  acActiveIdx = -1;
+  if (!suggestions.length) { list.classList.remove('open'); return; }
+  list.innerHTML = suggestions.map((s, i) =>
+    `<div class="autocomplete-item" data-idx="${i}" onmousedown="acSelect('${fieldId}','${listId}','${s.replace(/'/g,"\'")}')">`+
+    `<span class="ac-icon">↩</span>${s}</div>`
+  ).join('');
+  list.classList.add('open');
+}
+
+function acHide(listId) {
+  setTimeout(() => {
+    const list = document.getElementById(listId);
+    if (list) list.classList.remove('open');
+    acActiveIdx = -1;
+  }, 150);
+}
+
+function acSelect(fieldId, listId, value) {
+  document.getElementById(fieldId).value = value;
+  document.getElementById(listId).classList.remove('open');
+}
+
+function acKey(e, fieldId, listId) {
+  const list = document.getElementById(listId);
+  const items = list.querySelectorAll('.autocomplete-item');
+  if (!list.classList.contains('open') || !items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acActiveIdx = Math.min(acActiveIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.classList.toggle('active', i === acActiveIdx));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acActiveIdx = Math.max(acActiveIdx - 1, 0);
+    items.forEach((el, i) => el.classList.toggle('active', i === acActiveIdx));
+  } else if (e.key === 'Enter' && acActiveIdx >= 0) {
+    e.preventDefault();
+    const val = items[acActiveIdx].textContent.trim();
+    acSelect(fieldId, listId, val);
+  } else if (e.key === 'Escape') {
+    list.classList.remove('open');
+  }
+}
+
+// ── SEARCH ─────────────────────────────────────────────
+let searchQuery = '';
+
+function filterEntries() {
+  searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+  const clearBtn = document.getElementById('searchClear');
+  clearBtn.classList.toggle('visible', searchQuery.length > 0);
+  renderEntries();
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  searchQuery = '';
+  document.getElementById('searchClear').classList.remove('visible');
+  document.getElementById('searchCount').textContent = '';
+  renderEntries();
+}
+
 // ── RENDER ─────────────────────────────────────────────
 function renderEntries() {
   const list = document.getElementById('entryList');
@@ -1253,8 +1434,31 @@ function renderEntries() {
     return;
   }
 
-  // Sort by date ascending (oldest first)
-  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  // Sort by date descending for display only (newest first); sheet order unchanged)
+  let sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date));
+
+  // Apply search filter
+  if (searchQuery) {
+    const q = searchQuery;
+    sorted = sorted.filter(e =>
+      e.vendor.toLowerCase().includes(q) ||
+      e.item.toLowerCase().includes(q) ||
+      String(e.amount).includes(q)
+    );
+    const countEl = document.getElementById('searchCount');
+    if (countEl) countEl.textContent = sorted.length + ' result' + (sorted.length === 1 ? '' : 's') + ' found';
+  } else {
+    const countEl = document.getElementById('searchCount');
+    if (countEl) countEl.textContent = '';
+  }
+
+  if (searchQuery && sorted.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🔍</div>
+      <p>No results for "<strong>${searchQuery}</strong>".</p>
+    </div>`;
+    return;
+  }
 
   const entryHTML = sorted.map(e => `
     <div class="entry-card" data-id="${e.id}">
