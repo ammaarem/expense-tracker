@@ -892,6 +892,7 @@ let config = {
 
 let entries = [];
 let currentSheetName = '';
+let allSheetsEntries = []; // vendor/item pool across every sheet for autocomplete
 
 // Budget state — stored per sheet name
 function getBudget(sheetName) {
@@ -1193,6 +1194,7 @@ async function initSheet() {
     renderTabSwitcher();
     await ensureHeader();
     await loadEntries();
+    loadAllSheetsEntries(); // background — no await, so UI is not blocked
   } catch (e) {
     updateStatus('error');
     showToast('Connection failed: ' + e.message, 'error');
@@ -1287,6 +1289,7 @@ async function addEntry() {
     document.getElementById('newVendor').value = '';
     document.getElementById('newItem').value = '';
     await loadEntries();
+    loadAllSheetsEntries(); // refresh cross-sheet suggestion pool
   } catch (e) {
     showToast('Failed: ' + e.message, 'error');
   }
@@ -1343,6 +1346,26 @@ async function saveEdit(entryId, rowIndex) {
   }
 }
 
+// ── CROSS-SHEET SUGGESTION POOL ────────────────────────
+async function loadAllSheetsEntries() {
+  // Fetch all sheets in background and build a combined vendor/item pool
+  try {
+    const results = await Promise.all(
+      allSheets.map(sheet => api({ action: 'getRows', sheet }).catch(() => ({ rows: [] })))
+    );
+    const pool = [];
+    results.forEach(data => {
+      const rows = data.rows || [];
+      rows.slice(1).forEach(r => {
+        if (r[1]) pool.push({ vendor: r[1] || '', item: r[2] || '' });
+      });
+    });
+    allSheetsEntries = pool;
+  } catch (e) {
+    // Silent fail — autocomplete will fall back to current sheet entries
+  }
+}
+
 // ── AUTOCOMPLETE ───────────────────────────────────────
 let acActiveIdx = -1;
 
@@ -1351,7 +1374,9 @@ function getAcSuggestions(field) {
   if (!val) return [];
   const key = field === 'newVendor' ? 'vendor' : 'item';
   const seen = new Set();
-  return entries
+  // Merge current sheet entries + all-sheets pool (current sheet first for relevance)
+  const pool = [...entries, ...allSheetsEntries];
+  return pool
     .map(e => e[key])
     .filter(v => v && v.toLowerCase().includes(val) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .slice(0, 6);
@@ -1363,7 +1388,7 @@ function acShow(fieldId, listId) {
   acActiveIdx = -1;
   if (!suggestions.length) { list.classList.remove('open'); return; }
   list.innerHTML = suggestions.map((s, i) =>
-    `<div class="autocomplete-item" data-idx="${i}" onmousedown="acSelect('${fieldId}','${listId}','${s.replace(/'/g,"\'")}')">`+
+    `<div class="autocomplete-item" data-idx="${i}" data-value="${s.replace(/"/g,'&quot;')}" data-field="${fieldId}" data-list="${listId}" onmousedown="acSelect(this)">`+
     `<span class="ac-icon">↩</span>${s}</div>`
   ).join('');
   list.classList.add('open');
@@ -1377,7 +1402,10 @@ function acHide(listId) {
   }, 150);
 }
 
-function acSelect(fieldId, listId, value) {
+function acSelect(el) {
+  const value = el.dataset.value;
+  const fieldId = el.dataset.field;
+  const listId = el.dataset.list;
   document.getElementById(fieldId).value = value;
   document.getElementById(listId).classList.remove('open');
 }
@@ -1396,8 +1424,7 @@ function acKey(e, fieldId, listId) {
     items.forEach((el, i) => el.classList.toggle('active', i === acActiveIdx));
   } else if (e.key === 'Enter' && acActiveIdx >= 0) {
     e.preventDefault();
-    const val = items[acActiveIdx].textContent.trim();
-    acSelect(fieldId, listId, val);
+    acSelect(items[acActiveIdx]);
   } else if (e.key === 'Escape') {
     list.classList.remove('open');
   }
