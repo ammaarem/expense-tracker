@@ -1284,6 +1284,7 @@ async function addEntry() {
   try {
     await api({ action: 'appendRow', sheet: currentSheetName, row: [date, vendor, item, amount, id] });
     await api({ action: 'sortSheet', sheet: currentSheetName });
+    await api({ action: 'writeTotalRow', sheet: currentSheetName });
     showToast('Expense added ✓', 'success');
     document.getElementById('newAmount').value = '';
     document.getElementById('newVendor').value = '';
@@ -1300,6 +1301,7 @@ async function deleteEntry(rowIndex, entryId) {
   if (!confirm('Remove this expense?')) return;
   try {
     await api({ action: 'clearRow', sheet: currentSheetName, rowIndex });
+    await api({ action: 'writeTotalRow', sheet: currentSheetName });
     showToast('Removed ✓', 'success');
     await loadEntries();
   } catch (e) {
@@ -1338,6 +1340,7 @@ async function saveEdit(entryId, rowIndex) {
   try {
     await api({ action: 'updateRow', sheet: currentSheetName, rowIndex, row: [date, vendor, item, amount, entryId] });
     await api({ action: 'sortSheet', sheet: currentSheetName });
+    await api({ action: 'writeTotalRow', sheet: currentSheetName });
     showToast('Updated ✓', 'success');
     card.classList.remove('editing');
     await loadEntries();

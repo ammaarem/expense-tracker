@@ -58,7 +58,7 @@ function doPost(e) {
     if (action === 'clearRow') {
       const sheet = ss.getSheetByName(data.sheet);
       if (!sheet) return err('Sheet not found');
-      sheet.getRange(data.rowIndex, 1, 1, 5).clearContent();
+      sheet.deleteRow(data.rowIndex);
       return ok({ cleared: true });
     }
 
