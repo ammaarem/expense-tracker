@@ -65,7 +65,7 @@ function doPost(e) {
     if (action === 'addSheet') {
       const existing = ss.getSheetByName(data.name);
       if (existing) return err('Sheet already exists');
-      ss.insertSheet(data.name);
+      ss.insertSheet(data.name, ss.getSheets().length);
       reapplyTabColors(ss);
       return ok({ created: true });
     }
@@ -73,7 +73,7 @@ function doPost(e) {
     if (action === 'ensureHeader') {
       let sheet = ss.getSheetByName(data.sheet);
       if (!sheet) {
-        sheet = ss.insertSheet(data.sheet);
+        sheet = ss.insertSheet(data.sheet, ss.getSheets().length);
         reapplyTabColors(ss);
       }
       const first = sheet.getRange('A1').getValue();
